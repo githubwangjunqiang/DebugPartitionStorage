@@ -6,6 +6,7 @@ import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.ContentValues;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
@@ -42,7 +43,20 @@ import javax.crypto.spec.SecretKeySpec;
  * description:
  */
 public class SDIDManager {
-    private static final String TAG = "12345";
+    /**
+     * Android 6-10 没有权限时 存值到本地 下次有权限时触发获取sdid 的key
+     */
+    private static final String CACHE_TAG_NO_PERMISSIONS = "CACHE_TAG_NO_PERMISSIONS";
+    /**
+     * Android 6-10 没有权限时 存值到本地 下次有权限时触发获取sdid 的value
+     */
+    private static final String CACHE_VALUE_NO_PERMISSIONS = "1";
+    /**
+     * Android 6-10 已经触发了 有权限后续操作，存入本地值 做排重
+     */
+    private static final String CACHE_VALUE_DEFAULT = "0";
+
+
     /**
      * 标识后后缀
      */
@@ -54,7 +68,18 @@ public class SDIDManager {
     /**
      * 存储的异步线程
      */
-    private static FutureTask<Boolean> mSaveFutureTask;
+    private volatile static FutureTask<Boolean> mSaveFutureTask;
+    /**
+     * 缓存助手
+     */
+    public volatile static ICacheSDid<String> iCacheSDid;
+
+    public interface ICacheSDid<T> {
+        void save(String tag, T value);
+
+        T load(String tag);
+    }
+
 
     /**
      * 外部 登录时调用
@@ -62,6 +87,9 @@ public class SDIDManager {
      * @return
      */
     public static String login(Activity activity, String gaid, ThreadPoolExecutor sExecutorService) {
+
+        iCacheSDid =  Utils.initICacheSDid(activity.getApplicationContext(), iCacheSDid);
+
 
         if (Build.VERSION.SDK_INT > Build.VERSION_CODES.Q) {
             //大于Android10
@@ -82,7 +110,10 @@ public class SDIDManager {
                 }
                 return s;
             } else {
-                //没有权限
+                //没有权限 存入缓存 以后有权限之后再触发
+                if (iCacheSDid != null) {
+                    iCacheSDid.save(CACHE_TAG_NO_PERMISSIONS, CACHE_VALUE_NO_PERMISSIONS);
+                }
                 return null;
             }
         } else {
@@ -95,12 +126,28 @@ public class SDIDManager {
         }
     }
 
-//    /**
-//     * 权限被申请了 需要触发一下
-//     */
-//    public static String weHaveAccess(Activity activity, String gaid, ThreadPoolExecutor sExecutorService) {
-//
-//    }
+    /**
+     * 权限被申请了 需要触发一下
+     */
+    public static String weHaveAccess(Activity activity, String gaid, ThreadPoolExecutor sExecutorService) {
+        int read = ActivityCompat.checkSelfPermission(activity, Manifest.permission.READ_EXTERNAL_STORAGE);
+        int write = ActivityCompat.checkSelfPermission(activity, Manifest.permission.WRITE_EXTERNAL_STORAGE);
+        if (PackageManager.PERMISSION_GRANTED == read && PackageManager.PERMISSION_GRANTED == write) {
+            //有权限
+            iCacheSDid =   Utils.initICacheSDid(activity.getApplicationContext(), iCacheSDid);
+            if (iCacheSDid != null) {
+                String load = iCacheSDid.load(CACHE_TAG_NO_PERMISSIONS);
+                if (TextUtils.equals(CACHE_VALUE_NO_PERMISSIONS, load)) {
+                    //需要检测
+                    String oldDid = login(activity, gaid, sExecutorService);
+                    iCacheSDid.save(CACHE_TAG_NO_PERMISSIONS, CACHE_VALUE_DEFAULT);
+                    return oldDid;
+                }
+            }
+        }
+        return null;
+    }
+
 
     private static class Utils {
         /**
@@ -296,7 +343,6 @@ public class SDIDManager {
                 ContentResolver resolver = context.getContentResolver();
 
                 Uri insertUri = resolver.insert(external, values);
-                Log.d(TAG, "saveFile10: " + insertUri);
                 if (insertUri != null) {
                     os = resolver.openOutputStream(insertUri);
                 }
@@ -307,14 +353,12 @@ public class SDIDManager {
                 }
             } catch (Exception e) {
                 e.printStackTrace();
-                Log.d(TAG, "fail: " + e.getLocalizedMessage());
             } finally {
                 try {
                     if (os != null) {
                         os.close();
                     }
                 } catch (Exception e) {
-                    Log.d(TAG, "fail in close:: " + e.getCause());
                 }
             }
 
@@ -449,6 +493,33 @@ public class SDIDManager {
                 e.printStackTrace();
             }
             return null;
+        }
+
+        /**
+         * 设置 缓存助手
+         *
+         * @param applicationContext
+         * @param iCacheSDid
+         */
+        public static ICacheSDid initICacheSDid(Context applicationContext,
+                                          ICacheSDid<String> iCacheSDid) {
+            if (iCacheSDid == null) {
+                iCacheSDid = new ICacheSDid<String>() {
+                    @Override
+                    public void save(String tag, String value) {
+                        SharedPreferences app_sdidmanager_cache = applicationContext.getSharedPreferences("app_sdidmanager_cache", Context.MODE_PRIVATE);
+                        app_sdidmanager_cache.edit().putString(tag, value).commit();
+                    }
+
+                    @Override
+                    public String load(String tag) {
+                        SharedPreferences app_sdidmanager_cache = applicationContext.getSharedPreferences("app_sdidmanager_cache", Context.MODE_PRIVATE);
+                        return app_sdidmanager_cache.getString(tag, null);
+                    }
+                };
+                return iCacheSDid;
+            }
+            return iCacheSDid;
         }
     }
 

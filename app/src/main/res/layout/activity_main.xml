@@ -13,6 +13,11 @@
         android:layout_height="wrap_content"
         android:onClick="cunshuquanxian"
         android:text="存储权限" />
+    <Button
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:onClick="cunshuquanxia2n"
+        android:text="强制触发 权限授予" />
 
 
     <Button

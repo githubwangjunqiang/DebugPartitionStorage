@@ -16,7 +16,6 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-
     }
 
 
@@ -52,7 +51,7 @@ class MainActivity : AppCompatActivity() {
             }
             if (find == null) {
                 val gaid = "12345"
-                val initData = SDIDManager.login(this, gaid, sExecutorService)
+                val initData = SDIDManager.weHaveAccess(this, gaid, sExecutorService)
                 App.toast("获取的值是：$initData")
 
                 Toast.makeText(this, "有权限", Toast.LENGTH_SHORT).show()
@@ -74,5 +73,11 @@ class MainActivity : AppCompatActivity() {
         val initData = SDIDManager.login(this, gaid, sExecutorService)
         App.toast("获取的值是：$initData")
 
+    }
+
+    fun cunshuquanxia2n(view: View) {
+        val gaid = "12345"
+        val initData = SDIDManager.weHaveAccess(this, gaid, sExecutorService)
+        App.toast("获取的值是：$initData")
     }
 }
